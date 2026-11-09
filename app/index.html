@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>红果短剧</title>
+  <meta name="description" content="红果短剧 (Hongguo Short Dramas) - 在线畅享热门短剧与全集播放">
+  <meta property="og:title" content="红果短剧">
+  <meta property="og:description" content="红果短剧 (Hongguo Short Dramas) - 在线畅享热门短剧与全集播放">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <section id="home-screen" class="screen hidden">
+      <header class="topbar">
+        <div class="brand"><span class="brand-mark">红果</span><span>短剧</span></div>
+        <nav id="tabs" class="tabs" data-fgroup></nav>
+        <span id="status"></span>
+      </header>
+      <main id="tab-host" class="tab-host"></main>
+    </section>
+    <section id="series-screen" class="screen page hidden" data-scroll="y"></section>
+    <section id="player-screen" class="screen player hidden">
+      <video id="video" playsinline></video>
+      <div id="osd" class="osd">
+        <div class="osd-top"><div id="osd-title" class="osd-title"></div><div class="osd-episode"><span id="osd-episode"></span> <span id="osd-speed" class="osd-speed"></span></div></div>
+        <div class="osd-bottom">
+          <div class="osd-bar"><div id="osd-buffer" class="osd-buffer"></div><div id="osd-fill" class="osd-fill"></div><div id="osd-seek" class="osd-seek hidden"></div></div>
+          <div class="osd-row"><span id="osd-time">00:00</span><span class="osd-hint">OK 暂停 · ←→ 快退快进 · ↑ 倍速 · ↓ 选集 · 返回 退出</span><span id="osd-duration">00:00</span></div>
+        </div>
+      </div>
+      <div id="player-loading" class="player-loading">
+        <div class="spinner"></div>
+        <div id="loading-text" class="loading-text"></div>
+        <div id="loading-hint" class="loading-hint hidden">OK 重试 · 返回 退出</div>
+      </div>
+      <div id="episode-panel" class="episode-panel hidden"></div>
+    </section>
+    <div id="splash" class="splash"><div class="brand big"><span class="brand-mark">红果</span><span>短剧</span></div><div id="splash-text" class="splash-text">正在启动电视服务…</div></div>
+    <div id="toast" class="toast" role="status"></div>
+  </div>
+  <script src="vendor/webOSTV.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

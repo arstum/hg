@@ -1,0 +1,6 @@
+dist/
+.devdata/
+service/node_modules/
+.DS_Store
+*.ipk
+

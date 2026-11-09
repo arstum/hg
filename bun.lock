@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "hongguo-webos",
+      "dependencies": {
+        "openhongguo": "^0.2.0",
+      },
+    },
+  },
+  "packages": {
+    "openhongguo": ["openhongguo@0.2.0", "", {}, "sha512-NOfMzYHW/RbocrrZRmZrfvX1FI/FLYNJbueMinpQI1QB5r/hyMvA0UCE9/gyl5D3fVhzuWXwap2xvs5vFlVeNQ=="],
+  }
+}

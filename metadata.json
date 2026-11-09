@@ -1,0 +1,8 @@
+{
+  "name": "Hongguo Short Dramas",
+  "description": "红果短剧 (Hongguo Short Dramas) - 在线畅享热门短剧与全集播放",
+  "requestFramePermissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
