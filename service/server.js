@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 
@@ -14,7 +14,29 @@ const MEDIA_DIR = path.join(DATA_DIR, 'media');
 const COVER_DIR = path.join(DATA_DIR, 'covers-v2');
 const LEGACY_COVER_DIR = path.join(DATA_DIR, 'covers');
 const FEED_FILE = path.join(DATA_DIR, 'feeds.json');
-const FFMPEG = process.env.HONGGUO_FFMPEG || (fs.existsSync(path.join(__dirname, 'ffmpeg')) ? path.join(__dirname, 'ffmpeg') : 'ffmpeg');
+
+function resolveFfmpeg() {
+  const candidates = [
+    process.env.HONGGUO_FFMPEG,
+    path.join(__dirname, 'ffmpeg'),
+    path.join(__dirname, '..', 'service', 'ffmpeg'),
+    '/usr/bin/ffmpeg',
+    '/usr/local/bin/ffmpeg',
+    'ffmpeg',
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      const res = spawnSync(candidate, ['-version'], { stdio: 'ignore' });
+      if (!res.error && (res.status === 0 || res.status === 1)) {
+        return candidate;
+      }
+    } catch (_) {}
+  }
+  return 'ffmpeg';
+}
+
+const FFMPEG = resolveFfmpeg();
 const MAX_MEDIA = 3;
 const MAX_COVER_JOBS = 3;
 const CHANNELS = new Set(['推荐', '真人剧', '漫剧']);
@@ -79,9 +101,16 @@ class Slots {
 
 function runFfmpeg(args, timeoutMs = 180000) {
   return new Promise((resolve, reject) => {
-    const child = spawn(FFMPEG, ['-hide_banner', '-nostdin', '-loglevel', 'error', ...args], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let child;
+    try {
+      child = spawn(FFMPEG, ['-hide_banner', '-nostdin', '-loglevel', 'error', ...args], { stdio: ['ignore', 'ignore', 'pipe'] });
+    } catch (err) {
+      return reject(err);
+    }
     let stderr = '';
-    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch (_) {}
+    }, timeoutMs);
     child.stderr.on('data', (chunk) => { stderr = (stderr + String(chunk)).slice(-4000); });
     child.on('error', (error) => { clearTimeout(timer); reject(error); });
     child.on('close', (code) => {
@@ -384,8 +413,13 @@ class HongguoServer {
         const response = await fetch(source, { signal: AbortSignal.timeout(20000) });
         if (!response.ok || !response.body) throw new Error(`封面下载失败 (${response.status})`);
         await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(input));
-        await runFfmpeg(['-i', input, '-frames:v', '1', '-vf', 'scale=320:-1', '-q:v', '4', '-y', partial], 30000);
-        await fsp.rename(partial, output);
+        try {
+          await runFfmpeg(['-i', input, '-frames:v', '1', '-vf', 'scale=320:-1', '-q:v', '4', '-y', partial], 30000);
+          await fsp.rename(partial, output);
+        } catch (ffmpegError) {
+          console.warn('[hongguo] cover ffmpeg scale failed, serving original image:', ffmpegError.message || String(ffmpegError));
+          await fsp.copyFile(input, output);
+        }
         return output;
       } finally {
         await Promise.all([fsp.unlink(input).catch(() => {}), fsp.unlink(partial).catch(() => {})]);

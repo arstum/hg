@@ -7,8 +7,11 @@ const { HongguoServer } = require('./service/server.js');
 
 const root = __dirname;
 const appDir = path.resolve(root, 'app');
-process.env.HONGGUO_DATA_DIR = process.env.HONGGUO_DATA_DIR || path.resolve(root, '.data');
-process.env.HONGGUO_FFMPEG = process.env.HONGGUO_FFMPEG || 'ffmpeg';
+const dataDir = path.resolve(process.env.HONGGUO_DATA_DIR || path.resolve(root, '.data'));
+process.env.HONGGUO_DATA_DIR = dataDir;
+try {
+  fs.mkdirSync(dataDir, { recursive: true });
+} catch (_) {}
 
 // Initialize HongguoServer without requiring a token for web app
 const apiService = new HongguoServer({ token: null });

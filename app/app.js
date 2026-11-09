@@ -14,11 +14,57 @@
   const state = { base: '', token: '', screen: '', series: null, episodes: [], current: -1 };
   const video = $('video');
   const historyKey = 'hongguo-webos-progress-v1';
+  const favoritesKey = 'hongguo-webos-favorites-v1';
   const speedKey = 'hongguo-webos-speed-v1';
   let history = {};
   try { history = JSON.parse(localStorage.getItem(historyKey) || '{}') || {}; } catch (_) {}
+  let favorites = {};
+  try { favorites = JSON.parse(localStorage.getItem(favoritesKey) || '{}') || {}; } catch (_) {}
   let speed = 1;
   try { speed = SPEEDS.includes(Number(localStorage.getItem(speedKey))) ? Number(localStorage.getItem(speedKey)) : 1; } catch (_) {}
+
+  function timeAgo(timestamp) {
+    if (!timestamp) return '';
+    const diffSec = Math.floor((Date.now() - timestamp) / 1000);
+    if (diffSec < 60) return '刚刚';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}分钟前`;
+    const diffHour = Math.floor(diffMin / 60);
+    if (diffHour < 24) return `${diffHour}小时前`;
+    const diffDay = Math.floor(diffHour / 24);
+    if (diffDay === 1) return '昨天';
+    if (diffDay < 7) return `${diffDay}天前`;
+    const d = new Date(timestamp);
+    return `${d.getMonth() + 1}月${d.getDate()}日`;
+  }
+
+  function isFavorite(id) {
+    return Boolean(favorites && favorites[id]);
+  }
+
+  function toggleFavorite(series) {
+    if (!series || !series.id) return false;
+    if (favorites[series.id]) {
+      delete favorites[series.id];
+      try { localStorage.setItem(favoritesKey, JSON.stringify(favorites)); } catch (_) {}
+      toast('已取消收藏');
+      if (favTab && favTab.refresh) favTab.refresh();
+      return false;
+    } else {
+      favorites[series.id] = {
+        id: series.id,
+        title: series.title || '短剧',
+        cover: series.cover,
+        description: series.description,
+        episodeCount: series.episodeCount,
+        addedAt: Date.now(),
+      };
+      try { localStorage.setItem(favoritesKey, JSON.stringify(favorites)); } catch (_) {}
+      toast('已添加至「我的收藏」');
+      if (favTab && favTab.refresh) favTab.refresh();
+      return true;
+    }
+  }
 
   function h(tag, props, ...children) {
     const [name, ...classes] = tag.split('.');
@@ -335,6 +381,117 @@
     return tab;
   }
 
+  let favTab = null;
+  function favoritesTab() {
+    const page = h('.tab-page', { scroll: 'y' });
+    const content = h('div');
+    page.appendChild(content);
+
+    function render() {
+      const items = Object.values(favorites || {})
+        .filter((item) => item && item.id)
+        .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+
+      tab.status = `${items.length} 部`;
+      setStatus(tab);
+
+      if (!items.length) {
+        content.replaceChildren(stateView('empty', '暂无收藏的短剧\n在短剧详情页点击「收藏」按钮即可在此随时查看'));
+        return;
+      }
+
+      const toolbar = h('.row-toolbar', null,
+        h('.row-title', { text: `我的收藏 (${items.length})` }),
+        h('.btn.btn-danger', {
+          focusable: true,
+          text: '清空收藏',
+          onclick: () => {
+            favorites = {};
+            try { localStorage.setItem(favoritesKey, JSON.stringify(favorites)); } catch (_) {}
+            toast('已清空全部收藏');
+            render();
+          }
+        })
+      );
+
+      const cards = items.map((item) => {
+        const sub = item.addedAt ? `收藏于 ${timeAgo(item.addedAt)}` : (item.episodeCount ? `共 ${item.episodeCount} 集` : '');
+        return seriesCard(item, sub);
+      });
+
+      const grid = h('.grid', { group: true }, cards);
+      content.replaceChildren(toolbar, grid);
+    }
+
+    const tab = {
+      el: page,
+      status: '',
+      activate: () => render(),
+      refresh: () => render(),
+    };
+    favTab = tab;
+    return tab;
+  }
+
+  let histTab = null;
+  function historyTab() {
+    const page = h('.tab-page', { scroll: 'y' });
+    const content = h('div');
+    page.appendChild(content);
+
+    function render() {
+      const entries = Object.values(history || {})
+        .filter((entry) => entry && entry.title && entry.at)
+        .sort((a, b) => (b.at || 0) - (a.at || 0)); // Chronological order: newest first
+
+      tab.status = `${entries.length} 部`;
+      setStatus(tab);
+
+      if (!entries.length) {
+        content.replaceChildren(stateView('empty', '暂无播放历史\n观看短剧后，按时间倒序保存的观看记录将显示在这里'));
+        return;
+      }
+
+      const toolbar = h('.row-toolbar', null,
+        h('.row-title', { text: `播放历史 (${entries.length})` }),
+        h('.btn.btn-danger', {
+          focusable: true,
+          text: '清空历史',
+          onclick: () => {
+            history = {};
+            try { localStorage.setItem(historyKey, JSON.stringify(history)); } catch (_) {}
+            toast('已清空全部播放历史');
+            render();
+            if (tabs[0] && tabs[0].refresh) tabs[0].refresh();
+          }
+        })
+      );
+
+      const cards = entries.map((entry) => {
+        const subtitle = `看到第 ${entry.number || 1} 集 · ${clock(entry.time)} · ${timeAgo(entry.at)}`;
+        return seriesCard({
+          id: entry.seriesId || entry.id,
+          title: entry.title,
+          cover: entry.cover,
+          description: entry.description,
+          episodeCount: entry.episodeCount,
+        }, subtitle);
+      });
+
+      const grid = h('.grid', { group: true }, cards);
+      content.replaceChildren(toolbar, grid);
+    }
+
+    const tab = {
+      el: page,
+      status: '',
+      activate: () => render(),
+      refresh: () => render(),
+    };
+    histTab = tab;
+    return tab;
+  }
+
   let currentTab = -1;
   function selectTab(index) {
     if (index === currentTab) return;
@@ -348,13 +505,37 @@
   }
   function buildHome() {
     CHANNELS.forEach((name, index) => tabs.push(Object.assign(feedTab(name, index), { name })));
+    tabs.push(Object.assign(favoritesTab(), { name: '我的收藏' }));
+    tabs.push(Object.assign(historyTab(), { name: '播放历史' }));
     tabs.push(Object.assign(searchTab(), { name: '搜索' }));
+    const TAB_ICONS = {
+      '推荐': '🔥 ',
+      '真人剧': '🎬 ',
+      '漫剧': '✨ ',
+      '我的收藏': '★ ',
+      '播放历史': '🕒 ',
+      '搜索': '🔍 ',
+    };
     tabs.forEach((tab, index) => {
-      tab.button = h('.tab', { focusable: true, text: tab.name, 'data-i': index, onclick: () => { selectTab(index); focusInto(tab.el); } });
+      const icon = TAB_ICONS[tab.name] || '';
+      tab.button = h('.tab', { focusable: true, text: `${icon}${tab.name}`, 'data-i': index, onclick: () => { selectTab(index); focusInto(tab.el); } });
       $('tabs').appendChild(tab.button);
       tab.el.classList.add('hidden');
       $('tab-host').appendChild(tab.el);
     });
+
+    const brand = document.querySelector('.brand');
+    if (brand) {
+      brand.style.cursor = 'pointer';
+      brand.setAttribute('title', '返回首页推荐');
+      brand.addEventListener('click', () => { selectTab(0); focusInto(tabs[0].el); });
+    }
+
+    const osdBack = $('osd-back');
+    if (osdBack) {
+      osdBack.addEventListener('click', leavePlayer);
+    }
+
     // Switching on focus is debounced so sweeping across tabs loads nothing.
     $('tabs').addEventListener('focus2', (event) => {
       const index = Number(event.target.getAttribute('data-i'));
@@ -385,6 +566,7 @@
   function backToHome() {
     show('home');
     if (currentTab === 0) renderResumeBox();
+    if (tabs[currentTab] && tabs[currentTab].refresh) tabs[currentTab].refresh();
     if (state.homeFocus && state.homeFocus.isConnected) setFocus(state.homeFocus, { instant: true });
     else setFocus(tabs[currentTab].button);
   }
@@ -457,6 +639,19 @@
     const actions = h('.action-row', { group: true });
     if (resumeIndex >= 0) actions.appendChild(h('.btn.btn-primary', { focusable: true, text: `继续第 ${episodes[resumeIndex].number || resumeIndex + 1} 集`, onclick: () => play(resumeIndex) }));
     if (firstPlayable >= 0) actions.appendChild(h(`.btn${resumeIndex >= 0 ? '' : '.btn-primary'}`, { focusable: true, text: resumeIndex >= 0 ? '从头播放' : '开始播放', onclick: () => play(firstPlayable, 0) }));
+
+    const favorited = isFavorite(item.id);
+    const favBtn = h(`.btn.btn-fav${favorited ? '.active' : ''}`, {
+      focusable: true,
+      text: favorited ? '★ 已收藏' : '☆ 收藏',
+      onclick: () => {
+        const next = toggleFavorite(item);
+        favBtn.textContent = next ? '★ 已收藏' : '☆ 收藏';
+        favBtn.classList.toggle('active', next);
+      }
+    });
+    actions.appendChild(favBtn);
+
     const cover = h('.series-cover');
     if (item.cover) cover.appendChild(h('img', { alt: '', src: url('/cover', { url: item.cover }) }));
     const hero = h('.series-hero', null, cover, h('.series-info', null,
@@ -464,16 +659,32 @@
       h('.series-meta', { text: meta.filter(Boolean).join(' · ') }),
       item.description && h('.series-desc', { text: item.description }),
       actions));
+    const currentTabName = (tabs[currentTab] && tabs[currentTab].name) ? tabs[currentTab].name.replace(/^[^\u4e00-\u9fa5]+/, '') : '推荐';
+    const navBar = h('.page-nav', { group: true },
+      h('.btn.btn-nav-back', {
+        focusable: true,
+        text: '← 返回首页',
+        onclick: backToHome,
+      }),
+      h('.page-breadcrumbs', null,
+        h('span.breadcrumb-item', { text: '首页' }),
+        h('span.breadcrumb-sep', { text: '/' }),
+        h('span.breadcrumb-item', { text: currentTabName }),
+        h('span.breadcrumb-sep', { text: '/' }),
+        h('span.breadcrumb-current', { text: item.title || '剧集详情' })
+      )
+    );
+
     const screen = $('series-screen');
     if (error) {
-      screen.replaceChildren(hero, stateView('error', `加载分集失败：${error}`, () => openSeries(item)));
+      screen.replaceChildren(navBar, hero, stateView('error', `加载分集失败：${error}`, () => openSeries(item)));
       return setFocus(focusables(screen)[0]);
     }
     if (!episodes.length) {
-      return screen.replaceChildren(hero, stateView('loading', '正在加载分集…'));
+      return screen.replaceChildren(navBar, hero, stateView('loading', '正在加载分集…'));
     }
     const browser = episodeBrowser((index) => play(index), resumeIndex);
-    screen.replaceChildren(hero, h('.section-head', { text: `选集 (${episodes.length})` }), browser.el);
+    screen.replaceChildren(navBar, hero, h('.section-head', { text: `选集 (${episodes.length})` }), browser.el);
     screen.scrollTop = 0;
     focusInto(actions);
   }
@@ -518,9 +729,12 @@
     if (!episode) return;
     const series = state.series;
     history[series.id] = {
+      id: series.id,
+      seriesId: series.id,
       episodeId: episode.id,
       time: Math.floor(video.currentTime || 0),
       number: episode.number || state.current + 1,
+      episodeTitle: episode.title || '',
       title: series.title,
       cover: series.cover,
       description: series.description,
@@ -528,6 +742,7 @@
       at: Date.now(),
     };
     try { localStorage.setItem(historyKey, JSON.stringify(history)); } catch (_) {}
+    if (histTab && histTab.refresh) histTab.refresh();
   }
   function silence() {
     clearTimeout(progressTimer);
@@ -664,7 +879,11 @@
     panelOpen = true;
     const panel = $('episode-panel');
     const browser = episodeBrowser((index) => play(index, 0), state.current);
-    panel.replaceChildren(h('.panel-scroll', { scroll: 'y' }, h('.section-head', { text: `选集 (${state.episodes.length})` }), browser.el));
+    const panelHead = h('.panel-head', null,
+      h('.section-head', { text: `选集 (${state.episodes.length})` }),
+      h('.btn.btn-close-panel', { focusable: true, text: '✕ 关闭选集', onclick: closePanel })
+    );
+    panel.replaceChildren(h('.panel-scroll', { scroll: 'y' }, panelHead, browser.el));
     panel.classList.remove('hidden');
     focusScope = panel;
     browser.focusCurrent();

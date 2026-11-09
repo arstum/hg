@@ -23,7 +23,13 @@
     <section id="player-screen" class="screen player hidden">
       <video id="video" playsinline></video>
       <div id="osd" class="osd">
-        <div class="osd-top"><div id="osd-title" class="osd-title"></div><div class="osd-episode"><span id="osd-episode"></span> <span id="osd-speed" class="osd-speed"></span></div></div>
+        <div class="osd-top">
+          <div id="osd-back" class="btn btn-nav-back osd-back" data-f>← 返回</div>
+          <div class="osd-info">
+            <div id="osd-title" class="osd-title"></div>
+            <div class="osd-episode"><span id="osd-episode"></span> <span id="osd-speed" class="osd-speed"></span></div>
+          </div>
+        </div>
         <div class="osd-bottom">
           <div class="osd-bar"><div id="osd-buffer" class="osd-buffer"></div><div id="osd-fill" class="osd-fill"></div><div id="osd-seek" class="osd-seek hidden"></div></div>
           <div class="osd-row"><span id="osd-time">00:00</span><span class="osd-hint">OK 暂停 · ←→ 快退快进 · ↑ 倍速 · ↓ 选集 · 返回 退出</span><span id="osd-duration">00:00</span></div>
