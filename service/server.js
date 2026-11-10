@@ -557,7 +557,8 @@ class HongguoServer {
       res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, HEAD, OPTIONS' });
       return res.end();
     }
-    const url = new URL(req.url, 'http://localhost');
+    const isEncrypted = Boolean(req.socket?.encrypted || req.headers?.['x-forwarded-proto'] === 'https');
+    const url = new URL(req.url, `${isEncrypted ? 'https' : 'http'}://${req.headers?.host || 'localhost'}`);
     if (this.token && url.searchParams.get('token') !== this.token) return this.json(res, 403, { error: 'forbidden' });
     try {
       if (url.pathname === '/health') return this.json(res, 200, { ok: true });

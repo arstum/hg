@@ -37,7 +37,12 @@ docker compose logs -f
 docker compose down
 ```
 
-启动后在浏览器打开 `http://localhost:3000` 即可使用。媒体缓存和封面会自动持久化至 `hongguo-data` Docker 数据卷。
+启动后支持 HTTP 与 HTTPS 访问：
+- **本地访问**：支持 `http://localhost:3000` 与 `https://localhost:3000`（或标准 HTTPS 端口 `https://localhost`）。
+- **自动自签证书**：若未配置证书，服务首次启动会自动生成 2048 位 TLS 证书，保存在数据卷中。
+- **自定义证书**：将自定义 `cert.pem` 和 `key.pem` 挂载到容器的 `/app/certs` 目录，或通过环境变量 `SSL_CERT_PATH` 与 `SSL_KEY_PATH` 指定。
+- **强制 HTTPS**：可通过环境变量 `FORCE_HTTPS=true` 将所有 HTTP 请求自动重定向至 HTTPS。
+- 媒体缓存和封面会自动持久化至 `hongguo-data` Docker 数据卷。
 
 桌面直接调试运行：
 

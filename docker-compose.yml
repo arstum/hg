@@ -7,12 +7,19 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+      - "443:3000"
     environment:
       - PORT=3000
       - HONGGUO_DATA_DIR=/app/data
       - HONGGUO_FFMPEG=ffmpeg
+      # Optional TLS configuration:
+      # - SSL_CERT_PATH=/app/certs/cert.pem
+      # - SSL_KEY_PATH=/app/certs/key.pem
+      # - FORCE_HTTPS=true
     volumes:
       - hongguo-data:/app/data
+      # Optional: mount custom certificates from host ./certs directory
+      # - ./certs:/app/certs:ro
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
       interval: 30s
