@@ -10,6 +10,8 @@
     "lint": "node -c server.js scripts/build.mjs service/server.js app/app.js"
   },
   "dependencies": {
-    "openhongguo": "^0.2.0"
+    "heic-convert": "^2.1.0",
+    "openhongguo": "^0.2.0",
+    "sharp": "^0.35.5"
   }
 }

@@ -15,6 +15,89 @@ const COVER_DIR = path.join(DATA_DIR, 'covers-v2');
 const LEGACY_COVER_DIR = path.join(DATA_DIR, 'covers');
 const FEED_FILE = path.join(DATA_DIR, 'feeds.json');
 
+let sharpLib;
+try {
+  sharpLib = require('sharp');
+} catch (_) {}
+
+let heicConvertLib;
+try {
+  heicConvertLib = require('heic-convert');
+} catch (_) {}
+
+function isHeic(buf) {
+  if (!buf || buf.length < 12) return false;
+  if (buf.toString('ascii', 4, 8) !== 'ftyp') return false;
+  const brand = buf.toString('ascii', 8, 12);
+  if (/^(heic|heix|heim|heis|hevc|hevx|mif1|msf1)$/i.test(brand)) return true;
+  const chunk = buf.toString('ascii', 12, Math.min(buf.length, 64));
+  return /heic|mif1|msf1/i.test(chunk);
+}
+
+function isRenderableImage(filePath) {
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(12);
+    const read = fs.readSync(fd, buf, 0, 12, 0);
+    fs.closeSync(fd);
+    if (read < 4) return false;
+    // JPEG
+    if (buf[0] === 0xff && buf[1] === 0xd8) return true;
+    // PNG
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return true;
+    // WebP
+    if (read >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return true;
+    // GIF
+    if (buf.toString('ascii', 0, 3) === 'GIF') return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function convertImageToJpeg(inputBuffer, targetPath, maxWidth = 320) {
+  let workingBuffer = inputBuffer;
+  if (isHeic(inputBuffer)) {
+    if (heicConvertLib) {
+      try {
+        workingBuffer = await heicConvertLib({
+          buffer: inputBuffer,
+          format: 'JPEG',
+          quality: 0.85,
+        });
+      } catch (err) {
+        console.warn('[hongguo] heic-convert failed:', err.message || String(err));
+      }
+    }
+  }
+
+  if (sharpLib) {
+    try {
+      await sharpLib(workingBuffer)
+        .resize({ width: maxWidth, withoutEnlargement: true })
+        .jpeg({ quality: 80, mozjpeg: false })
+        .toFile(targetPath);
+      return;
+    } catch (sharpErr) {
+      console.warn('[hongguo] sharp processing failed:', sharpErr.message || String(sharpErr));
+    }
+  }
+
+  if (!isHeic(workingBuffer)) {
+    await fsp.writeFile(targetPath, workingBuffer);
+    return;
+  }
+
+  // Last-resort fallback for non-HEIC formats
+  const tempInput = `${targetPath}.raw`;
+  try {
+    await fsp.writeFile(tempInput, workingBuffer);
+    await runFfmpeg(['-i', tempInput, '-frames:v', '1', '-vf', `scale=${maxWidth}:-1`, '-q:v', '4', '-y', targetPath], 30000);
+  } finally {
+    await fsp.unlink(tempInput).catch(() => {});
+  }
+}
+
 function resolveFfmpeg() {
   const candidates = [
     process.env.HONGGUO_FFMPEG,
@@ -37,7 +120,7 @@ function resolveFfmpeg() {
 }
 
 const FFMPEG = resolveFfmpeg();
-const MAX_MEDIA = 3;
+const MAX_MEDIA = Number(process.env.MAX_MEDIA || 15);
 const MAX_COVER_JOBS = 3;
 const CHANNELS = new Set(['推荐', '真人剧', '漫剧']);
 const FEED_FRESH_MS = 15 * 60 * 1000;
@@ -291,13 +374,15 @@ class HongguoServer {
   async resolve(id) {
     if (!validId(id)) throw new Error('无效的分集 ID');
     const mediaPath = `/media?id=${encodeURIComponent(id)}`;
+    const isReady = fs.existsSync(this.mediaFile(id));
     // A play model is scarce for an anonymous device: never spend one on an
     // episode that is on disk, being prepared, or was just resolved.
-    if (fs.existsSync(this.mediaFile(id)) || this.jobs.has(id)) return { episodeId: id, mediaPath };
+    if (isReady) return { episodeId: id, mediaPath, ready: true };
+    if (this.jobs.has(id)) return { episodeId: id, mediaPath, ready: false };
     const known = this.plays.get(id);
     if (known && Date.now() - known.at < PLAY_TTL_MS) {
       this.prepareMedia(id).catch((error) => console.error('[hongguo] media preparation', error));
-      return { episodeId: id, mediaPath };
+      return { episodeId: id, mediaPath, ready: false };
     }
     const sdk = await this.sdk();
     const result = await this.resolveWithDeviceReset(sdk, id);
@@ -311,7 +396,7 @@ class HongguoServer {
       at: Date.now(),
     });
     this.prepareMedia(id).catch((error) => console.error('[hongguo] media preparation', error));
-    return { episodeId: id, duration: result.playback.duration_seconds, mediaPath };
+    return { episodeId: id, duration: result.playback.duration_seconds, mediaPath, ready: false };
   }
 
   mediaStatus(id) {
@@ -404,25 +489,26 @@ class HongguoServer {
     const name = crypto.createHash('sha256').update(new URL(source).pathname).digest('hex');
     if (this.coverJobs.has(name)) return this.coverJobs.get(name);
     const output = path.join(COVER_DIR, `${name}.jpg`);
-    if (fs.existsSync(output)) return output;
+    if (fs.existsSync(output) && isRenderableImage(output)) return output;
     const job = this.coverSlots.run(async () => {
       await fsp.mkdir(COVER_DIR, { recursive: true });
-      const input = path.join(COVER_DIR, `${name}.input`);
+      if (fs.existsSync(output) && isRenderableImage(output)) return output;
       const partial = path.join(COVER_DIR, `${name}.partial.jpg`);
       try {
         const response = await fetch(source, { signal: AbortSignal.timeout(20000) });
-        if (!response.ok || !response.body) throw new Error(`封面下载失败 (${response.status})`);
-        await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(input));
+        if (!response.ok) throw new Error(`封面下载失败 (${response.status})`);
+        const arrayBuf = await response.arrayBuffer();
+        const inputBuffer = Buffer.from(arrayBuf);
         try {
-          await runFfmpeg(['-i', input, '-frames:v', '1', '-vf', 'scale=320:-1', '-q:v', '4', '-y', partial], 30000);
+          await convertImageToJpeg(inputBuffer, partial, 320);
           await fsp.rename(partial, output);
-        } catch (ffmpegError) {
-          console.warn('[hongguo] cover ffmpeg scale failed, serving original image:', ffmpegError.message || String(ffmpegError));
-          await fsp.copyFile(input, output);
+        } catch (convertError) {
+          console.warn('[hongguo] cover conversion failed, writing buffer directly:', convertError.message || String(convertError));
+          await fsp.writeFile(output, inputBuffer);
         }
         return output;
       } finally {
-        await Promise.all([fsp.unlink(input).catch(() => {}), fsp.unlink(partial).catch(() => {})]);
+        await fsp.unlink(partial).catch(() => {});
       }
     }).finally(() => this.coverJobs.delete(name));
     this.coverJobs.set(name, job);

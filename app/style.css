@@ -142,6 +142,9 @@ img { display: block; }
 .osd-top { position: absolute; left: 0; right: 0; top: 0; padding: 40px 80px 80px; background: linear-gradient(#000d, #0000); display: flex; align-items: center; gap: 28px; }
 .osd-back { flex: none; font-size: 26px; padding: 10px 24px; border-radius: 30px; pointer-events: auto; }
 .osd-info { flex: 1; min-width: 0; }
+.osd-actions { display: flex; align-items: center; gap: 16px; pointer-events: auto; }
+.osd-btn { font-size: 24px; padding: 10px 24px; border-radius: 30px; background: #ffffff26; color: #fff; border: 1px solid #ffffff33; cursor: pointer; transition: transform .12s, background .12s; }
+.osd-btn.focused, .osd-btn:hover { background: #fff; color: #111; transform: scale(1.05); }
 .osd-title { font-size: 38px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .osd-episode { font-size: 28px; color: #fffc; margin-top: 8px; }
 .osd-speed { color: #ff8f8d; margin-left: 14px; }

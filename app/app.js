@@ -535,6 +535,18 @@
     if (osdBack) {
       osdBack.addEventListener('click', leavePlayer);
     }
+    const osdPrev = $('osd-prev');
+    if (osdPrev) {
+      osdPrev.addEventListener('click', playPrevEpisode);
+    }
+    const osdNext = $('osd-next');
+    if (osdNext) {
+      osdNext.addEventListener('click', playNextEpisode);
+    }
+    const osdEpPanel = $('osd-ep-panel');
+    if (osdEpPanel) {
+      osdEpPanel.addEventListener('click', openPanel);
+    }
 
     // Switching on focus is debounced so sweeping across tabs loads nothing.
     $('tabs').addEventListener('focus2', (event) => {
@@ -807,6 +819,48 @@
     else video.pause();
     showOsd(true);
   }
+  let prefetchTimer = null;
+  let prefetchedId = null;
+
+  function schedulePrefetchNext(nextIndex) {
+    clearTimeout(prefetchTimer);
+    if (!state.episodes || nextIndex < 0 || nextIndex >= state.episodes.length) return;
+    let targetIndex = nextIndex;
+    while (targetIndex < state.episodes.length && !state.episodes[targetIndex].playable) targetIndex++;
+    if (targetIndex >= state.episodes.length) return;
+    const nextEpisode = state.episodes[targetIndex];
+    if (!nextEpisode || prefetchedId === nextEpisode.id) return;
+
+    // Start background prefetch after 2 seconds of smooth playback of current episode
+    prefetchTimer = setTimeout(() => {
+      if (state.screen !== 'player' || state.current !== targetIndex - 1) return;
+      prefetchedId = nextEpisode.id;
+      request('/play', { id: nextEpisode.id }).catch(() => {});
+    }, 2000);
+  }
+
+  function playNextEpisode() {
+    let next = state.current + 1;
+    while (next < state.episodes.length && !state.episodes[next].playable) next++;
+    if (next < state.episodes.length) {
+      toast(`播放第 ${state.episodes[next].number || next + 1} 集`);
+      play(next, 0);
+    } else {
+      toast('已经是最后一集');
+    }
+  }
+
+  function playPrevEpisode() {
+    let prev = state.current - 1;
+    while (prev >= 0 && !state.episodes[prev].playable) prev--;
+    if (prev >= 0) {
+      toast(`播放第 ${state.episodes[prev].number || prev + 1} 集`);
+      play(prev, 0);
+    } else {
+      toast('已经是第一集');
+    }
+  }
+
   function followProgress(id, mine) {
     return new Promise((resolve, reject) => {
       const poll = async () => {
@@ -820,7 +874,7 @@
             const mb = (bytes) => (bytes / 1048576).toFixed(1);
             setLoading(status.total ? `正在下载 ${mb(status.received)} / ${mb(status.total)} MB` : '正在下载视频…');
           } else if (status.stage === 'processing') setLoading('正在处理视频…');
-          progressTimer = setTimeout(poll, 500);
+          progressTimer = setTimeout(poll, 250);
         } catch (error) { reject(error); }
       };
       poll();
@@ -846,8 +900,10 @@
     try {
       const data = await request('/play', { id: episode.id });
       if (mine !== playRequest) return;
-      await followProgress(episode.id, mine);
-      if (mine !== playRequest) return;
+      if (!data.ready) {
+        await followProgress(episode.id, mine);
+        if (mine !== playRequest) return;
+      }
       setLoading('正在打开视频…');
       video.onloadedmetadata = () => {
         video.onloadedmetadata = null;
@@ -857,6 +913,7 @@
         remember();
         video.play().catch(() => {});
         showOsd();
+        schedulePrefetchNext(index + 1);
       };
       video.src = url(data.mediaPath);
       video.load();
@@ -1019,7 +1076,10 @@
     const target = event.target.closest && event.target.closest('[data-f]');
     if (target && target !== focused && focusScope.contains(target)) setFocus(target, { scroll: false });
   });
-  document.addEventListener('visibilitychange', () => { if (document.hidden && !video.paused) video.pause(); });
+  document.addEventListener('visibilitychange', () => {
+    // In web browsers, continue playing seamlessly in background/switching tabs; only pause on webOS TV
+    if (window.PalmSystem && document.hidden && !video.paused) video.pause();
+  });
   // handlesRelaunch leaves the window where it is, so opening the app from the
   // launcher while it runs in the background has to bring it forward itself.
   document.addEventListener('webOSRelaunch', () => { if (window.PalmSystem && window.PalmSystem.activate) window.PalmSystem.activate(); });
